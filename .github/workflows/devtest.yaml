@@ -1,0 +1,29 @@
+name: Krita Security Scan
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: 
+  
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Krita Scan
+        run: |
+          curl -X POST "https://dev.astra.nerdlogics.cloud/api/v1/scans" \
+            -H "Authorization: Bearer krita_fFECRcPVOciIjBeqZUKjHjUP9TSslm07" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repoUrl": "${{ github.repositoryUrl }}",
+              "branch": "${{ github.ref_name }}",
+              "commitSha": "${{ github.sha }}",
+              "source": "github-actions",
+              "prNumber": ${{ github.event.number || 'null' }},
+              "ciMetadata": {
+                "runId": "${{ github.run_id }}",
+                "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "actor": "${{ github.actor }}"
+              }
+            }'
