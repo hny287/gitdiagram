@@ -1,458 +1,273 @@
 import { useState, useEffect, useCallback } from "react";
+
 import {
-  cacheDiagramAndExplanation,
-  getCachedDiagram,
+  getDiagramState,
+  persistDiagramRenderError,
 } from "~/app/_actions/cache";
-import { getLastGeneratedDate } from "~/app/_actions/repo";
-import { getCostOfGeneration } from "~/lib/fetch-backend";
-import { exampleRepos } from "~/lib/exampleRepos";
+import type {
+  DiagramStateResponse,
+  DiagramStreamState,
+} from "~/features/diagram/types";
+import { useDiagramStream } from "~/hooks/diagram/useDiagramStream";
+import { useDiagramExport } from "~/hooks/diagram/useDiagramExport";
+import { isExampleRepo } from "~/lib/exampleRepos";
+import { storeOpenAiKey } from "~/lib/openai-key";
 
-interface StreamState {
-  status:
-    | "idle"
-    | "started"
-    | "explanation_sent"
-    | "explanation"
-    | "explanation_chunk"
-    | "mapping_sent"
-    | "mapping"
-    | "mapping_chunk"
-    | "diagram_sent"
-    | "diagram"
-    | "diagram_chunk"
-    | "complete"
-    | "error";
-  message?: string;
-  explanation?: string;
-  mapping?: string;
-  diagram?: string;
-  error?: string;
+function toInitialStreamState(
+  stateRecord: DiagramStateResponse | null | undefined,
+): DiagramStreamState {
+  if (!stateRecord?.diagram) {
+    return { status: "idle" };
+  }
+
+  return {
+    status: "complete",
+    diagram: stateRecord.diagram,
+    explanation: stateRecord.explanation ?? undefined,
+    graph: stateRecord.graph ?? undefined,
+    latestSessionAudit: stateRecord.latestSessionAudit ?? undefined,
+    costSummary:
+      stateRecord.latestSessionAudit?.finalCost ??
+      stateRecord.latestSessionAudit?.estimatedCost,
+  };
 }
 
-interface StreamResponse {
-  status: StreamState["status"];
-  message?: string;
-  chunk?: string;
-  explanation?: string;
-  mapping?: string;
-  diagram?: string;
-  error?: string;
+function getFailureMessage(
+  audit: DiagramStateResponse["latestSessionAudit"],
+): string | undefined {
+  if (audit?.status !== "failed") {
+    return undefined;
+  }
+
+  return audit.renderError ?? audit.compilerError ?? audit.validationError;
 }
 
-export function useDiagram(username: string, repo: string) {
-  const [diagram, setDiagram] = useState<string>("");
-  const [error, setError] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [lastGenerated, setLastGenerated] = useState<Date | undefined>();
-  const [cost, setCost] = useState<string>("");
+export function useDiagram(
+  username: string,
+  repo: string,
+  initialState?: DiagramStateResponse | null,
+) {
+  const [loading, setLoading] = useState<boolean>(!Boolean(initialState?.diagram));
+  const [lastGenerated, setLastGenerated] = useState<Date | undefined>(
+    initialState?.lastSuccessfulAt
+      ? new Date(initialState.lastSuccessfulAt)
+      : undefined,
+  );
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  // const [tokenCount, setTokenCount] = useState<number>(0);
-  const [state, setState] = useState<StreamState>({ status: "idle" });
-  const [hasUsedFreeGeneration, setHasUsedFreeGeneration] = useState<boolean>(
-    () => {
-      if (typeof window === "undefined") return false;
-      return localStorage.getItem("has_used_free_generation") === "true";
+
+  const applyCompletedDiagram = useCallback(
+    async ({
+      generatedAt,
+    }: {
+      generatedAt?: string;
+    }) => {
+      if (generatedAt) {
+        setLastGenerated(new Date(generatedAt));
+      }
+      setLoading(false);
     },
+    [],
   );
 
-  const generateDiagram = useCallback(
-    async (instructions = "", githubPat?: string) => {
-      setState({
-        status: "started",
-        message: "Starting generation process...",
+  const onStreamComplete = useCallback(
+    async (result: {
+      diagram: string;
+      explanation: string;
+      graph: DiagramStreamState["graph"];
+      latestSessionAudit: DiagramStreamState["latestSessionAudit"];
+      generatedAt?: string;
+    }) => {
+      await applyCompletedDiagram({
+        generatedAt: result.generatedAt,
       });
+    },
+    [applyCompletedDiagram],
+  );
+
+  const onStreamError = useCallback((_message: string) => {
+    setLoading(false);
+  }, []);
+
+  const { state, runGeneration, setState } = useDiagramStream({
+    username,
+    repo,
+    onComplete: onStreamComplete,
+    onError: onStreamError,
+    initialState: toInitialStreamState(initialState),
+  });
+
+  const applyStoredState = useCallback(
+    (stateRecord: DiagramStateResponse) => {
+      const storedDiagram = stateRecord.diagram;
+      const latestAudit = stateRecord.latestSessionAudit;
+      const failureMessage = getFailureMessage(latestAudit);
+      const shouldExposeFailure = !storedDiagram && Boolean(failureMessage);
+
+      if (stateRecord.lastSuccessfulAt) {
+        setLastGenerated(new Date(stateRecord.lastSuccessfulAt));
+      }
+
+      if (!storedDiagram && !latestAudit) {
+        return false;
+      }
+
+      setState((prev) => ({
+        ...prev,
+        status: storedDiagram
+          ? "complete"
+          : shouldExposeFailure
+            ? "error"
+            : prev.status,
+        diagram: storedDiagram ?? prev.diagram,
+        explanation: stateRecord.explanation ?? prev.explanation,
+        latestSessionAudit: latestAudit ?? prev.latestSessionAudit,
+        costSummary:
+          latestAudit?.finalCost ?? latestAudit?.estimatedCost ?? prev.costSummary,
+        graph: stateRecord.graph ?? latestAudit?.graph ?? prev.graph,
+        graphAttempts: latestAudit?.graphAttempts ?? prev.graphAttempts,
+        failureStage: shouldExposeFailure
+          ? latestAudit?.failureStage
+          : prev.failureStage,
+        validationError: shouldExposeFailure
+          ? latestAudit?.validationError
+          : prev.validationError,
+        error: shouldExposeFailure
+          ? failureMessage
+          : storedDiagram
+            ? undefined
+            : prev.error,
+      }));
+
+      return Boolean(storedDiagram);
+    },
+    [setState],
+  );
+
+  const syncDiagramState = useCallback(
+    async ({
+      generateIfMissing,
+      showLoading,
+      clearError,
+    }: {
+      generateIfMissing: boolean;
+      showLoading: boolean;
+      clearError: boolean;
+    }) => {
+      if (showLoading) {
+        setLoading(true);
+      }
+
+      if (clearError) {
+        setState((prev) => ({
+          ...prev,
+          error: undefined,
+        }));
+      }
 
       try {
-        const baseUrl =
-          process.env.NEXT_PUBLIC_API_DEV_URL ?? "https://api.gitdiagram.com";
-        const response = await fetch(`${baseUrl}/generate/stream`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            username,
-            repo,
-            instructions,
-            api_key: localStorage.getItem("openai_key") ?? undefined,
-            github_pat: githubPat,
-          }),
-        });
-        if (!response.ok) {
-          throw new Error("Failed to start streaming");
-        }
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error("No reader available");
+        const githubPat = localStorage.getItem("github_pat");
+        const stateRecord = await getDiagramState(
+          username,
+          repo,
+          githubPat ?? undefined,
+        );
+        const hasStoredDiagram = applyStoredState(stateRecord);
+
+        if (hasStoredDiagram || !generateIfMissing) {
+          return;
         }
 
-        let explanation = "";
-        let mapping = "";
-        let diagram = "";
-
-        // Process the stream
-        const processStream = async () => {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              // Convert the chunk to text
-              const chunk = new TextDecoder().decode(value);
-              const lines = chunk.split("\n");
-
-              // Process each SSE message
-              for (const line of lines) {
-                if (line.startsWith("data: ")) {
-                  try {
-                    const data = JSON.parse(line.slice(6)) as StreamResponse;
-
-                    // If we receive an error, set loading to false immediately
-                    if (data.error) {
-                      setState({ status: "error", error: data.error });
-                      setLoading(false);
-                      return; // Add this to stop processing
-                    }
-
-                    // Update state based on the message type
-                    switch (data.status) {
-                      case "started":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "started",
-                          message: data.message,
-                        }));
-                        break;
-                      case "explanation_sent":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "explanation_sent",
-                          message: data.message,
-                        }));
-                        break;
-                      case "explanation":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "explanation",
-                          message: data.message,
-                        }));
-                        break;
-                      case "explanation_chunk":
-                        if (data.chunk) {
-                          explanation += data.chunk;
-                          setState((prev) => ({ ...prev, explanation }));
-                        }
-                        break;
-                      case "mapping_sent":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "mapping_sent",
-                          message: data.message,
-                        }));
-                        break;
-                      case "mapping":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "mapping",
-                          message: data.message,
-                        }));
-                        break;
-                      case "mapping_chunk":
-                        if (data.chunk) {
-                          mapping += data.chunk;
-                          setState((prev) => ({ ...prev, mapping }));
-                        }
-                        break;
-                      case "diagram_sent":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "diagram_sent",
-                          message: data.message,
-                        }));
-                        break;
-                      case "diagram":
-                        setState((prev) => ({
-                          ...prev,
-                          status: "diagram",
-                          message: data.message,
-                        }));
-                        break;
-                      case "diagram_chunk":
-                        if (data.chunk) {
-                          diagram += data.chunk;
-                          setState((prev) => ({ ...prev, diagram }));
-                        }
-                        break;
-                      case "complete":
-                        setState({
-                          status: "complete",
-                          explanation: data.explanation,
-                          diagram: data.diagram,
-                        });
-                        const date = await getLastGeneratedDate(username, repo);
-                        setLastGenerated(date ?? undefined);
-                        if (!hasUsedFreeGeneration) {
-                          localStorage.setItem(
-                            "has_used_free_generation",
-                            "true",
-                          );
-                          setHasUsedFreeGeneration(true);
-                        }
-                        break;
-                      case "error":
-                        setState({ status: "error", error: data.error });
-                        break;
-                    }
-                  } catch (e) {
-                    console.error("Error parsing SSE message:", e);
-                  }
-                }
-              }
-            }
-          } finally {
-            reader.releaseLock();
-          }
-        };
-
-        await processStream();
-      } catch (error) {
-        setState({
-          status: "error",
-          error:
-            error instanceof Error
-              ? error.message
-              : "An unknown error occurred",
-        });
-        setLoading(false);
+        await runGeneration(githubPat ?? undefined);
+      } catch {
+        if (generateIfMissing) {
+          setState((prev) => ({
+            ...prev,
+            status: "error",
+            error: "Something went wrong. Please try again later.",
+          }));
+        }
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
       }
     },
-    [username, repo, hasUsedFreeGeneration],
+    [applyStoredState, repo, runGeneration, setState, username],
   );
 
-  useEffect(() => {
-    if (state.status === "complete" && state.diagram) {
-      // Cache the completed diagram with the usedOwnKey flag
-      const hasApiKey = !!localStorage.getItem("openai_key");
-      void cacheDiagramAndExplanation(
-        username,
-        repo,
-        state.diagram,
-        state.explanation ?? "No explanation provided",
-        hasApiKey,
-      );
-      setDiagram(state.diagram);
-      void getLastGeneratedDate(username, repo).then((date) =>
-        setLastGenerated(date ?? undefined),
-      );
-    } else if (state.status === "error") {
-      setLoading(false);
-    }
-  }, [state.status, state.diagram, username, repo, state.explanation]);
-
   const getDiagram = useCallback(async () => {
+    await syncDiagramState({
+      generateIfMissing: true,
+      showLoading: true,
+      clearError: true,
+    });
+  }, [syncDiagramState]);
+
+  const refreshStoredDiagram = useCallback(async () => {
+    await syncDiagramState({
+      generateIfMissing: false,
+      showLoading: false,
+      clearError: false,
+    });
+  }, [syncDiagramState]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (isExampleRepo(username, repo)) {
+      return;
+    }
+
     setLoading(true);
-    setError("");
-    setCost("");
+    setState((prev) => ({
+      ...prev,
+      error: undefined,
+    }));
+
+    const githubPat = localStorage.getItem("github_pat");
 
     try {
-      // Check cache first - always allow access to cached diagrams
-      const cached = await getCachedDiagram(username, repo);
-      const github_pat = localStorage.getItem("github_pat");
-
-      if (cached) {
-        setDiagram(cached);
-        const date = await getLastGeneratedDate(username, repo);
-        setLastGenerated(date ?? undefined);
-        return;
-      }
-
-      // TEMP: LET USERS HAVE INFINITE GENERATIONS
-      // Only check for API key if we need to generate a new diagram
-      // const storedApiKey = localStorage.getItem("openai_key");
-      // if (hasUsedFreeGeneration && !storedApiKey) {
-      //   setError(
-      //     "You've used your one free diagram. Please enter your API key to continue. As a student, I can't afford to keep it totally free and I hope you understand :)",
-      //   );
-      //   setState({ status: "error", error: "API key required" });
-      //   return;
-      // }
-
-      // Get cost estimate
-      const costEstimate = await getCostOfGeneration(
-        username,
-        repo,
-        "",
-        github_pat ?? undefined,
-      );
-
-      if (costEstimate.error) {
-        console.error("Cost estimation failed:", costEstimate.error);
-        // if (costEstimate.requires_api_key) {
-        //   setTokenCount(costEstimate.token_count ?? 0);
-        // }
-        // TODO: come to think of it, why is requires api key based on tokens? this unimplemented option is smarter. Add API key dialog
-        setError(costEstimate.error);
-        return;
-      }
-
-      setCost(costEstimate.cost ?? "");
-
-      // Start streaming generation
-      await generateDiagram("", github_pat ?? undefined);
-
-      // Note: The diagram and lastGenerated will be set by the generateDiagram function
-      // through the state updates
-    } catch (error) {
-      console.error("Error in getDiagram:", error);
-      setError("Something went wrong. Please try again later.");
+      await runGeneration(githubPat ?? undefined);
+    } catch {
+      setState((prev) => ({
+        ...prev,
+        status: "error",
+        error: "Something went wrong. Please try again later.",
+      }));
     } finally {
       setLoading(false);
     }
-  }, [username, repo, generateDiagram]);
+  }, [repo, runGeneration, setState, username]);
 
   useEffect(() => {
+    if (initialState?.diagram) {
+      void refreshStoredDiagram();
+      return;
+    }
     void getDiagram();
-  }, [getDiagram]);
+  }, [getDiagram, initialState?.diagram, refreshStoredDiagram]);
 
-  const isExampleRepo = (repoName: string): boolean => {
-    return Object.values(exampleRepos).some((value) =>
-      value.includes(repoName),
-    );
-  };
-
-  const handleModify = async (instructions: string) => {
-    if (isExampleRepo(repo)) {
-      setError("Example repositories cannot be modified.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setCost("");
-    try {
-      // Start streaming generation with instructions
-      await generateDiagram(instructions);
-    } catch (error) {
-      console.error("Error modifying diagram:", error);
-      setError("Failed to modify diagram. Please try again later.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegenerate = async (instructions: string) => {
-    if (isExampleRepo(repo)) {
-      setError("Example repositories cannot be regenerated.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setCost("");
-    try {
-      const github_pat = localStorage.getItem("github_pat");
-
-      // TEMP: LET USERS HAVE INFINITE GENERATIONS
-      // const storedApiKey = localStorage.getItem("openai_key");
-
-      // Check if user has used their free generation and doesn't have an API key
-      // if (hasUsedFreeGeneration && !storedApiKey) {
-      //   setError(
-      //     "You've used your one free diagram. Please enter your API key to continue. As a student, I can't afford to keep it totally free and I hope you understand :)",
-      //   );
-      //   setLoading(false);
-      //   return;
-      // }
-
-      const costEstimate = await getCostOfGeneration(username, repo, "");
-
-      if (costEstimate.error) {
-        console.error("Cost estimation failed:", costEstimate.error);
-        setError(costEstimate.error);
-        return;
-      }
-
-      setCost(costEstimate.cost ?? "");
-
-      // Start streaming generation with instructions
-      await generateDiagram(instructions, github_pat ?? undefined);
-    } catch (error) {
-      console.error("Error regenerating diagram:", error);
-      setError("Failed to regenerate diagram. Please try again later.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(diagram);
-    } catch (error) {
-      console.error("Error copying to clipboard:", error);
-    }
-  };
-
-  const handleExportImage = () => {
-    const svgElement = document.querySelector(".mermaid svg");
-    if (!(svgElement instanceof SVGSVGElement)) return;
-
-    try {
-      const canvas = document.createElement("canvas");
-      const scale = 4;
-
-      const bbox = svgElement.getBBox();
-      const transform = svgElement.getScreenCTM();
-      if (!transform) return;
-
-      const width = Math.ceil(bbox.width * transform.a);
-      const height = Math.ceil(bbox.height * transform.d);
-      canvas.width = width * scale;
-      canvas.height = height * scale;
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const svgData = new XMLSerializer().serializeToString(svgElement);
-      const img = new Image();
-
-      img.onload = () => {
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.scale(scale, scale);
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const a = document.createElement("a");
-        a.download = "diagram.png";
-        a.href = canvas.toDataURL("image/png", 1.0);
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      };
-
-      img.src =
-        "data:image/svg+xml;base64," +
-        btoa(unescape(encodeURIComponent(svgData)));
-    } catch (error) {
-      console.error("Error generating PNG:", error);
-    }
-  };
+  const diagram = state.diagram ?? "";
+  const error = state.error ?? "";
+  const { handleCopy, handleExportImage } = useDiagramExport(diagram);
 
   const handleApiKeySubmit = async (apiKey: string) => {
     setShowApiKeyDialog(false);
     setLoading(true);
-    setError("");
+    setState((prev) => ({
+      ...prev,
+      error: undefined,
+    }));
 
-    // Store the key first
-    localStorage.setItem("openai_key", apiKey);
+    storeOpenAiKey(apiKey);
 
-    // Then generate diagram using stored key
-    const github_pat = localStorage.getItem("github_pat");
+    const githubPat = localStorage.getItem("github_pat");
     try {
-      await generateDiagram("", github_pat ?? undefined);
-    } catch (error) {
-      console.error("Error generating with API key:", error);
-      setError("Failed to generate diagram with provided API key.");
+      await runGeneration(githubPat ?? undefined);
+    } catch {
+      setState((prev) => ({
+        ...prev,
+        status: "error",
+        error: "Failed to generate diagram with provided API key.",
+      }));
     } finally {
       setLoading(false);
     }
@@ -466,21 +281,39 @@ export function useDiagram(username: string, repo: string) {
     setShowApiKeyDialog(true);
   };
 
+  const handleDiagramRenderError = useCallback(
+    async (renderMessage: string) => {
+      const githubPat = localStorage.getItem("github_pat");
+      await persistDiagramRenderError(
+        username,
+        repo,
+        renderMessage,
+        githubPat ?? undefined,
+      );
+      setState((prev) => ({
+        ...prev,
+        status: "error",
+        error: `Diagram render failed: ${renderMessage}`,
+        failureStage: "browser_render",
+        validationError: renderMessage,
+      }));
+    },
+    [repo, setState, username],
+  );
+
   return {
     diagram,
     error,
     loading,
     lastGenerated,
-    cost,
-    handleModify,
-    handleRegenerate,
     handleCopy,
     showApiKeyDialog,
-    // tokenCount,
     handleApiKeySubmit,
     handleCloseApiKeyDialog,
     handleOpenApiKeyDialog,
     handleExportImage,
-    state,
+    handleRegenerate,
+    handleDiagramRenderError,
+    state: state as DiagramStreamState,
   };
 }

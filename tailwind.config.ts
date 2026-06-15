@@ -1,41 +1,13 @@
 import { type Config } from "tailwindcss";
-import { fontFamily } from "tailwindcss/defaultTheme";
+import defaultTheme from "tailwindcss/defaultTheme";
 
 export default {
-  darkMode: ["class"],
+  darkMode: "class",
   content: ["./src/**/*.tsx"],
   theme: {
     extend: {
-      keyframes: {
-        fadeInUp: {
-          "0%": { opacity: "0", transform: "translateY(10px)" },
-          "50%": { opacity: "1", transform: "translateY(0)" },
-          "100%": { opacity: "0", transform: "translateY(-10px)" },
-        },
-        fadeIn: {
-          "0%": { opacity: "0" },
-          "100%": { opacity: "1" },
-        },
-        dot1: {
-          "0%, 100%": { opacity: "1" },
-          "33%, 66%": { opacity: "1" },
-          "67%, 99%": { opacity: "1" },
-        },
-        dot2: {
-          "0%, 32%": { opacity: "0" },
-          "33%, 100%": { opacity: "1" },
-        },
-        dot3: {
-          "0%, 65%": { opacity: "0" },
-          "66%, 100%": { opacity: "1" },
-        },
-      },
-      animation: {
-        "fade-in-up": "fadeInUp 3s ease-in-out infinite",
-        "fade-in": "fadeIn 1s ease-out forwards",
-      },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", ...fontFamily.sans],
+        sans: ["var(--font-geist-sans)", ...defaultTheme.fontFamily.sans],
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -86,5 +58,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("tailwind-scrollbar")],
+  plugins: [require("tailwindcss-animate")],
 } satisfies Config;

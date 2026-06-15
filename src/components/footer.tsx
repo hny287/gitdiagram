@@ -1,17 +1,20 @@
-import React from "react";
 import Link from "next/link";
 
 export function Footer() {
   return (
-    <footer className="mt-auto border-t-[3px] border-black py-4 lg:px-8">
+    <footer className="mt-auto border-t-[3px] border-black py-4 lg:px-8 dark:border-black">
       <div className="container mx-auto flex h-8 max-w-4xl items-center justify-center">
-        <span className="text-sm font-medium text-black">
+        <span className="text-sm font-medium text-black dark:text-neutral-100">
           Made by{" "}
           <Link
-            href="https://ahmedkhaleel.dev"
-            className="text-purple-600 hover:underline"
+            href="https://ahmedkhaleel.com"
+            className="neo-link hover:underline"
           >
             Ahmed Khaleel
+          </Link>
+          <span className="mx-2 text-black dark:text-neutral-100">/</span>
+          <Link href="/sponsor" className="neo-link hover:underline">
+            Sponsor
           </Link>
         </span>
       </div>

@@ -7,22 +7,23 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Sparkles } from "lucide-react";
 import React from "react";
-import { CustomizationDropdown } from "./customization-dropdown";
-import { exampleRepos } from "~/lib/exampleRepos";
+import { exampleRepos, isExampleRepo } from "~/lib/exampleRepos";
 import { ExportDropdown } from "./export-dropdown";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { Switch } from "~/components/ui/switch";
+import { parseGitHubRepoUrl } from "~/features/diagram/github-url";
+import { SponsorSlot } from "~/components/sponsor-slot";
 
 interface MainCardProps {
   isHome?: boolean;
   username?: string;
   repo?: string;
-  showCustomization?: boolean;
-  onModify?: (instructions: string) => void;
-  onRegenerate?: (instructions: string) => void;
+  hasDiagram?: boolean;
   onCopy?: () => void;
   lastGenerated?: Date;
+  actualCost?: string;
   onExportImage?: () => void;
+  onRegenerate?: () => void;
   zoomingEnabled?: boolean;
   onZoomToggle?: () => void;
   loading?: boolean;
@@ -32,22 +33,22 @@ export default function MainCard({
   isHome = true,
   username,
   repo,
-  showCustomization,
-  onModify,
-  onRegenerate,
+  hasDiagram = false,
   onCopy,
   lastGenerated,
+  actualCost,
   onExportImage,
+  onRegenerate,
   zoomingEnabled,
   onZoomToggle,
   loading,
 }: MainCardProps) {
   const [repoUrl, setRepoUrl] = useState("");
   const [error, setError] = useState("");
-  const [activeDropdown, setActiveDropdown] = useState<
-    "customize" | "export" | null
-  >(null);
+  const [activeDropdown, setActiveDropdown] = useState<"export" | null>(null);
   const router = useRouter();
+  const isExampleRepoSelected =
+    !isHome && !!username && !!repo && isExampleRepo(username, repo);
 
   useEffect(() => {
     if (username && repo) {
@@ -55,30 +56,17 @@ export default function MainCard({
     }
   }, [username, repo]);
 
-  useEffect(() => {
-    if (loading) {
-      setActiveDropdown(null);
-    }
-  }, [loading]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const githubUrlPattern =
-      /^https?:\/\/github\.com\/([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_\.]+)\/?$/;
-    const match = githubUrlPattern.exec(repoUrl.trim());
-
-    if (!match) {
-      setError("Please enter a valid GitHub repository URL");
+    const parsed = parseGitHubRepoUrl(repoUrl);
+    if (!parsed) {
+      setError("Please enter a valid GitHub repository URL or owner/repo");
       return;
     }
 
-    const [, username, repo] = match || [];
-    if (!username || !repo) {
-      setError("Invalid repository URL format");
-      return;
-    }
+    const { username, repo } = parsed;
     const sanitizedUsername = encodeURIComponent(username);
     const sanitizedRepo = encodeURIComponent(repo);
     router.push(`/${sanitizedUsername}/${sanitizedRepo}`);
@@ -89,24 +77,24 @@ export default function MainCard({
     router.push(repoPath);
   };
 
-  const handleDropdownToggle = (dropdown: "customize" | "export") => {
+  const handleDropdownToggle = (dropdown: "export") => {
     setActiveDropdown(activeDropdown === dropdown ? null : dropdown);
   };
 
   return (
-    <Card className="relative w-full max-w-3xl border-[3px] border-black bg-purple-200 p-4 shadow-[8px_8px_0_0_#000000] sm:p-8">
-      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+    <Card className="neo-panel relative w-full max-w-3xl !bg-[hsl(var(--neo-panel))] p-4 sm:p-8">
+      <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
           <Input
-            placeholder="https://github.com/username/repo"
-            className="flex-1 rounded-md border-[3px] border-black px-3 py-4 text-base font-bold shadow-[4px_4px_0_0_#000000] placeholder:text-base placeholder:font-normal placeholder:text-gray-700 sm:px-4 sm:py-6 sm:text-lg sm:placeholder:text-lg"
+            placeholder="owner/repo or GitHub URL"
+            className="neo-input min-w-0 flex-1 rounded-md px-3 py-4 text-base font-bold placeholder:text-base placeholder:font-normal placeholder:text-gray-700 sm:px-4 sm:py-6 sm:text-lg sm:placeholder:text-lg dark:placeholder:text-neutral-400"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             required
           />
           <Button
             type="submit"
-            className="border-[3px] border-black bg-purple-400 p-4 px-4 text-base text-black shadow-[4px_4px_0_0_#000000] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:transform hover:bg-purple-400 sm:p-6 sm:px-6 sm:text-lg"
+            className="neo-button p-4 px-4 text-base sm:p-6 sm:px-6 sm:text-lg"
           >
             Diagram
           </Button>
@@ -122,41 +110,42 @@ export default function MainCard({
               <>
                 {/* Buttons Container */}
                 <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-4">
-                  {showCustomization &&
-                    onModify &&
-                    onRegenerate &&
-                    lastGenerated && (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleDropdownToggle("customize");
-                        }}
-                        className={`flex items-center justify-between gap-2 rounded-md border-[3px] border-black px-4 py-2 font-medium text-black transition-colors sm:max-w-[250px] ${
-                          activeDropdown === "customize"
-                            ? "bg-purple-400"
-                            : "bg-purple-300 hover:bg-purple-400"
-                        }`}
-                      >
-                        <span>Customize Diagram</span>
-                        {activeDropdown === "customize" ? (
-                          <ChevronUp size={20} />
-                        ) : (
-                          <ChevronDown size={20} />
-                        )}
-                      </button>
-                    )}
-
-                  {onCopy && lastGenerated && onExportImage && (
+                  {onRegenerate && (
+                    <button
+                      type="button"
+                      disabled={isExampleRepoSelected}
+                      title={
+                        isExampleRepoSelected
+                          ? "Regeneration is disabled for example repositories."
+                          : undefined
+                      }
+                      className={`flex items-center justify-between gap-2 rounded-md border-[3px] border-black px-4 py-2 font-medium text-black transition-colors sm:max-w-[250px] dark:text-black ${
+                        isExampleRepoSelected
+                          ? "cursor-not-allowed bg-purple-200 opacity-70 dark:bg-[#251b3a] dark:text-[hsl(var(--foreground))]"
+                          : "bg-purple-300 hover:bg-purple-400 dark:border-[#2d1d4e] dark:bg-[hsl(var(--neo-subtle-muted))] dark:hover:bg-[hsl(var(--neo-subtle))]"
+                      }`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setActiveDropdown(null);
+                        if (isExampleRepoSelected) return;
+                        onRegenerate();
+                      }}
+                    >
+                      Regenerate Diagram
+                    </button>
+                  )}
+                  {hasDiagram && onCopy && onExportImage && (
                     <div className="flex flex-col items-center justify-center gap-2">
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           handleDropdownToggle("export");
                         }}
-                        className={`flex items-center justify-between gap-2 rounded-md border-[3px] border-black px-4 py-2 font-medium text-black transition-colors sm:max-w-[250px] ${
+                        className={`flex cursor-pointer items-center justify-between gap-2 rounded-md border-[3px] border-black px-4 py-2 font-medium text-black transition-colors sm:max-w-[250px] dark:text-black ${
                           activeDropdown === "export"
-                            ? "bg-purple-400"
-                            : "bg-purple-300 hover:bg-purple-400"
+                            ? "bg-purple-400 dark:border-[#2d1d4e] dark:bg-[hsl(var(--neo-button))]"
+                            : "bg-purple-300 hover:bg-purple-400 dark:border-[#2d1d4e] dark:bg-[hsl(var(--neo-subtle-muted))] dark:hover:bg-[hsl(var(--neo-button-hover))]"
                         }`}
                       >
                         <span>Export Diagram</span>
@@ -168,12 +157,16 @@ export default function MainCard({
                       </button>
                     </div>
                   )}
-                  {lastGenerated && (
+                  {hasDiagram && (
                     <>
-                      <label className="font-medium text-black">
+                      <label
+                        htmlFor="zoom-toggle"
+                        className="font-medium text-black dark:text-neutral-100"
+                      >
                         Enable Zoom
                       </label>
                       <Switch
+                        id="zoom-toggle"
                         checked={zoomingEnabled}
                         onCheckedChange={onZoomToggle}
                       />
@@ -189,20 +182,12 @@ export default function MainCard({
                       : "pointer-events-none max-h-0 opacity-0"
                   }`}
                 >
-                  {activeDropdown === "customize" && (
-                    <CustomizationDropdown
-                      onModify={onModify!}
-                      onRegenerate={onRegenerate!}
-                      lastGenerated={lastGenerated!}
-                      isOpen={true}
-                    />
-                  )}
                   {activeDropdown === "export" && (
                     <ExportDropdown
                       onCopy={onCopy!}
-                      lastGenerated={lastGenerated!}
+                      lastGenerated={lastGenerated}
+                      actualCost={actualCost}
                       onExportImage={onExportImage!}
-                      isOpen={true}
                     />
                   )}
                 </div>
@@ -213,22 +198,26 @@ export default function MainCard({
 
         {/* Example Repositories */}
         {isHome && (
-          <div className="space-y-2">
-            <div className="text-sm text-gray-700 sm:text-base">
-              Try these example repositories:
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-gray-700 sm:text-base dark:text-neutral-300">
+                Try these example repositories:
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(exampleRepos).map(([name, path]) => (
+                  <Button
+                    key={name}
+                    type="button"
+                    variant="outline"
+                    className="border-2 border-black bg-purple-400 text-sm text-black transition-transform hover:-translate-y-0.5 hover:transform hover:bg-purple-300 sm:text-base dark:border-black dark:bg-[hsl(var(--neo-panel-muted))] dark:text-[hsl(var(--foreground))] dark:hover:bg-[hsl(var(--neo-button))] dark:hover:text-[#0d0a19]"
+                    onClick={(e) => handleExampleClick(path, e)}
+                  >
+                    {name}
+                  </Button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(exampleRepos).map(([name, path]) => (
-                <Button
-                  key={name}
-                  variant="outline"
-                  className="border-2 border-black bg-purple-400 text-sm text-black transition-transform hover:-translate-y-0.5 hover:transform hover:bg-purple-300 sm:text-base"
-                  onClick={(e) => handleExampleClick(path, e)}
-                >
-                  {name}
-                </Button>
-              ))}
-            </div>
+            <SponsorSlot surface="home" />
           </div>
         )}
       </form>
@@ -236,7 +225,7 @@ export default function MainCard({
       {/* Decorative Sparkle */}
       <div className="absolute -bottom-8 -left-12 hidden sm:block">
         <Sparkles
-          className="h-20 w-20 fill-sky-400 text-black"
+          className="h-20 w-20 fill-sky-400 text-black dark:fill-[hsl(var(--neo-button))] dark:text-[hsl(var(--background))]"
           strokeWidth={0.6}
           style={{ transform: "rotate(-15deg)" }}
         />

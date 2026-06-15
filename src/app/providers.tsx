@@ -1,26 +1,65 @@
-// app/providers.js
 "use client";
+
+import { Suspense, useEffect } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { PostHogProvider } from "posthog-js/react";
+import { ThemeProvider } from "next-themes";
+
+const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
 if (typeof window !== "undefined") {
   // Only initialize PostHog if the environment variables are available
-  const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-  // const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
-
   if (posthogKey) {
     posthog.init(posthogKey, {
-      api_host: "/ingest",
+      // Use a non-default first-party path to reduce adblock filter hits.
+      api_host: "/phx9a",
       ui_host: "https://us.posthog.com",
-      person_profiles: "always",
+      autocapture: false,
+      capture_pageview: false,
+      capture_pageleave: false,
+      disable_session_recording: true,
+      person_profiles: "identified_only",
     });
-  } else {
-    console.log(
-      "PostHog environment variables are not set. Analytics will be disabled. Skipping PostHog initialization.",
-    );
   }
 }
 
+function PostHogPageviewTracker() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (!posthogKey || typeof window === "undefined") {
+      return;
+    }
+
+    const queryString = searchParams.toString();
+    const currentUrl = `${window.location.origin}${pathname}${
+      queryString ? `?${queryString}` : ""
+    }`;
+
+    posthog.capture("$pageview", {
+      $current_url: currentUrl,
+    });
+  }, [pathname, searchParams]);
+
+  return null;
+}
+
 export function CSPostHogProvider({ children }: { children: React.ReactNode }) {
-  return <PostHogProvider client={posthog}>{children}</PostHogProvider>;
+  return (
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="light"
+      enableSystem={false}
+      storageKey="gitdiagram-theme"
+    >
+      <PostHogProvider client={posthog}>
+        <Suspense fallback={null}>
+          <PostHogPageviewTracker />
+        </Suspense>
+        {children}
+      </PostHogProvider>
+    </ThemeProvider>
+  );
 }

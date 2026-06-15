@@ -15,14 +15,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-purple-100 group-[.toaster]:text-foreground group-[.toaster]:shadow-[3px_3px_0_0_#000000] group-[.toaster]:border-[2px] group-[.toaster]:border-black group-[.toaster]:rounded-md group-[.toaster]:p-3 group-[.toaster]:flex group-[.toaster]:items-center group-[.toaster]:justify-between group-[.toaster]:gap-4",
-          title:
-            "group-[.toast]:font-bold group-[.toast]:text-base group-[.toast]:m-0",
-          description: "group-[.toast]:text-muted-foreground",
+            "toast !bg-purple-100 dark:!bg-[#1a1228] !text-black dark:!text-[hsl(var(--foreground))] !shadow-[3px_3px_0_0_#000000] dark:!shadow-[3px_3px_0_0_#0d0a19] !border-[2px] !border-black dark:!border-[#2d1d4e] !rounded-md !p-3 !flex !items-center !justify-between !gap-4",
+          title: "font-bold text-base m-0",
+          description: "text-muted-foreground dark:!text-[hsl(var(--muted-foreground))]",
           actionButton:
-            "group-[.toast]:!bg-purple-200 group-[.toast]:!border-[2px] group-[.toast]:!border-solid group-[.toast]:!border-black group-[.toast]:!py-[14px] group-[.toast]:!px-6 group-[.toast]:!text-lg group-[.toast]:!text-black group-[.toast]:hover:!bg-purple-300 group-[.toast]:!transition-colors",
+            "!bg-purple-200 dark:!bg-[hsl(var(--neo-button))] !border-[2px] !border-solid !border-black dark:!border-[#2d1d4e] !py-[14px] !px-6 !text-lg !text-black hover:!bg-purple-300 dark:hover:!bg-[hsl(var(--neo-button-hover))] !transition-colors !cursor-pointer",
           cancelButton:
-            "group-[.toast]:text-neutral-500 group-[.toast]:underline hover:group-[.toast]:text-neutral-700",
+            "text-neutral-500 underline hover:text-neutral-700 dark:text-[hsl(var(--muted-foreground))] dark:hover:text-[hsl(var(--foreground))]",
         },
         duration: 5000,
       }}

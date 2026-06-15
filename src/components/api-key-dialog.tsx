@@ -1,10 +1,22 @@
 "use client";
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Input } from "./ui/input";
-import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+
+import {
+  clearStoredOpenAiKey,
+  getStoredOpenAiKey,
+} from "~/lib/openai-key";
+
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { Input } from "./ui/input";
 
 interface ApiKeyDialogProps {
   isOpen: boolean;
@@ -16,7 +28,7 @@ export function ApiKeyDialog({ isOpen, onClose, onSubmit }: ApiKeyDialogProps) {
   const [apiKey, setApiKey] = useState<string>("");
 
   useEffect(() => {
-    const storedKey = localStorage.getItem("openai_key");
+    const storedKey = getStoredOpenAiKey();
     if (storedKey) {
       setApiKey(storedKey);
     }
@@ -29,39 +41,43 @@ export function ApiKeyDialog({ isOpen, onClose, onSubmit }: ApiKeyDialogProps) {
   };
 
   const handleClear = () => {
-    localStorage.removeItem("openai_key");
+    clearStoredOpenAiKey();
     setApiKey("");
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="border-[3px] border-black bg-purple-200 p-6 shadow-[8px_8px_0_0_#000000] sm:max-w-md">
+      <DialogContent className="neo-panel p-6 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold text-black">
-            Enter OpenAI API Key
+          <DialogTitle className="text-xl font-bold text-black dark:text-neutral-100">
+            Enter API Key
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Provide an OpenAI API key to use for diagram generation in this
+            browser.
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 text-black dark:text-neutral-200"
+        >
           <div className="text-sm">
             GitDiagram offers infinite free diagram generations! You can also
-            provide an OpenAI API key to generate diagrams at your own cost. The
-            key will be stored locally in your browser.
-            {/* GitDiagram offers one free diagram generation. For additional
-            diagrams, you&apos;ll need to provide an OpenAI API key. The key
-            will be stored locally in your browser. */}
+            provide your own OpenAI API key to generate diagrams at your own cost.
+            The key is stored locally in your browser.
             <br />
             <br />
             <span className="font-medium">Get your OpenAI API key </span>
             <Link
               href="https://platform.openai.com/api-keys"
-              className="font-medium text-purple-600 transition-colors duration-200 hover:text-purple-500"
+              className="neo-link font-medium"
             >
               here
             </Link>
             .
           </div>
           <details className="group text-sm [&>summary:focus-visible]:outline-none">
-            <summary className="cursor-pointer font-medium text-purple-700 hover:text-purple-600">
+            <summary className="neo-link cursor-pointer font-medium">
               Data storage disclaimer
             </summary>
             <div className="animate-accordion-down mt-2 space-y-2 overflow-hidden pl-2">
@@ -71,7 +87,7 @@ export function ApiKeyDialog({ isOpen, onClose, onSubmit }: ApiKeyDialogProps) {
                 following the instructions in the{" "}
                 <Link
                   href="https://github.com/ahmedkhaleel2004/gitdiagram"
-                  className="text-purple-600 transition-colors duration-200 hover:text-purple-500"
+                  className="neo-link"
                 >
                   README
                 </Link>
@@ -84,14 +100,14 @@ export function ApiKeyDialog({ isOpen, onClose, onSubmit }: ApiKeyDialogProps) {
             placeholder="sk-..."
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            className="flex-1 rounded-md border-[3px] border-black px-3 py-2 text-base font-bold shadow-[4px_4px_0_0_#000000] placeholder:text-base placeholder:font-normal placeholder:text-gray-700"
+            className="neo-input flex-1 rounded-md px-3 py-2 text-base font-bold placeholder:text-base placeholder:font-normal placeholder:text-gray-700 dark:placeholder:text-neutral-400"
             required
           />
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={handleClear}
-              className="text-sm text-purple-600 hover:text-purple-500"
+              className="neo-link text-sm"
             >
               Clear
             </button>
@@ -99,14 +115,14 @@ export function ApiKeyDialog({ isOpen, onClose, onSubmit }: ApiKeyDialogProps) {
               <Button
                 type="button"
                 onClick={onClose}
-                className="border-[3px] border-black bg-gray-200 px-4 py-2 text-black shadow-[4px_4px_0_0_#000000] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-gray-300"
+                className="neo-button-muted px-4 py-2"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                disabled={!apiKey.startsWith("sk-")}
-                className="border-[3px] border-black bg-purple-400 px-4 py-2 text-black shadow-[4px_4px_0_0_#000000] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-purple-300 disabled:opacity-50"
+                disabled={apiKey.trim().length === 0}
+                className="neo-button px-4 py-2 disabled:opacity-50"
               >
                 Save Key
               </Button>

@@ -4,14 +4,15 @@ import { ActionButton } from "./action-button";
 
 interface ExportDropdownProps {
   onCopy: () => void;
-  lastGenerated: Date;
+  lastGenerated?: Date;
+  actualCost?: string;
   onExportImage: () => void;
-  isOpen: boolean;
 }
 
 export function ExportDropdown({
   onCopy,
   lastGenerated,
+  actualCost,
   onExportImage,
 }: ExportDropdownProps) {
   return (
@@ -26,11 +27,20 @@ export function ExportDropdown({
         <CopyButton onClick={onCopy} />
       </div>
 
-      <div className="flex items-center">
-        <span className="text-sm text-gray-700">
-          Last generated: {lastGenerated.toLocaleString()}
-        </span>
-      </div>
+      {lastGenerated ? (
+        <div className="flex items-center">
+          <span className="text-sm text-gray-700 dark:text-neutral-300">
+            Last generated: {lastGenerated.toLocaleString()}
+          </span>
+        </div>
+      ) : null}
+      {actualCost ? (
+        <div className="flex items-center">
+          <span className="text-sm text-gray-700 dark:text-neutral-300">
+            Actual cost: {actualCost}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

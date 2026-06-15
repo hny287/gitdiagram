@@ -6,12 +6,13 @@ import { Header } from "~/components/header";
 import { Footer } from "~/components/footer";
 import { CSPostHogProvider } from "./providers";
 import { Toaster } from "~/components/ui/sonner";
+import { SITE_URL } from "~/lib/site";
 
 export const metadata: Metadata = {
   title: "GitDiagram",
   description:
     "Turn any GitHub repository into an interactive diagram for visualization in seconds.",
-  metadataBase: new URL("https://gitdiagram.com"),
+  metadataBase: new URL(SITE_URL),
   keywords: [
     "github",
     "git diagram",
@@ -52,14 +53,13 @@ export const metadata: Metadata = {
     description:
       "Turn any GitHub repository into an interactive diagram for visualization.",
     siteName: "GitDiagram",
-    images: [
-      {
-        url: "/og-image.png", // You'll need to create this image
-        width: 1200,
-        height: 630,
-        alt: "GitDiagram - Repository Visualization Tool",
-      },
-    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "GitDiagram - Repository to Diagram in Seconds",
+    description:
+      "Turn any GitHub repository into an interactive diagram for visualization.",
+    creator: "@ahmedkhaleel2004",
   },
   robots: {
     index: true,
@@ -67,6 +67,8 @@ export const metadata: Metadata = {
     googleBot: {
       index: true,
       follow: true,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
       "max-snippet": -1,
     },
   },
@@ -76,15 +78,19 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${GeistSans.variable}`}>
-      <CSPostHogProvider>
-        <body className="flex min-h-screen flex-col">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${GeistSans.variable}`}
+    >
+      <body className="flex min-h-screen flex-col">
+        <CSPostHogProvider>
           <Header />
           <main className="flex-grow">{children}</main>
           <Footer />
           <Toaster />
-        </body>
-      </CSPostHogProvider>
+        </CSPostHogProvider>
+      </body>
     </html>
   );
 }

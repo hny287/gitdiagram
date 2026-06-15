@@ -1,28 +1,30 @@
-# Use Python 3.12 slim image for smaller size
-FROM python:3.12-slim
+FROM oven/bun:1.3.14 AS bun-runtime
+FROM python:3.14.5-slim
 
-# Set working directory
 WORKDIR /app
+ENV ENVIRONMENT=production
+ENV PORT=8000
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install pinned uv from PyPI to avoid depending on GHCR availability during deploys.
+RUN pip install --no-cache-dir uv==0.11.2
+
+# Copy dependency manifests first for better layer caching
+COPY pyproject.toml uv.lock ./
+COPY package.json ./
+COPY bun.lock ./
+
+# Install pinned runtime dependencies from uv lockfile
+RUN uv sync --frozen --no-dev --no-install-project
+RUN bun install --production --frozen-lockfile
 
 # Copy application code
 COPY . .
-
-# Create and set permissions for entrypoint script
-COPY entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh && \
-    # Ensure the script uses Unix line endings
     sed -i 's/\r$//' /app/entrypoint.sh && \
-    # Double check permissions
     ls -la /app/entrypoint.sh
 
-# Expose port
 EXPOSE 8000
 
-# Use entrypoint script
 CMD ["/bin/bash", "/app/entrypoint.sh"]
